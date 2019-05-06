@@ -8,4 +8,4 @@ build:
 	gcc -o acp acp.c -lrt
 
 run:
-	time ./acp sourcedir/ copydir/
+	time -f "%E" ./acp sourcedir/ copydir/
