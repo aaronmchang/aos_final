@@ -1,0 +1,2 @@
+Use `make` to see the commands run.
+Use `make -s` to only see the resulting time.

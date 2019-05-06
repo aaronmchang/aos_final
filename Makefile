@@ -1,11 +1,13 @@
-all: clean build run
+all: clean build run_acp
 
 clean:
 	rm -f acp
-	rm -rf copydir
 
 build:
 	gcc -o acp acp.c -lrt
 
-run:
-	time -f "%E" ./acp sourcedir/ copydir/
+run_acp: clean build
+	./run_acp.sh
+
+run_cp: clean build
+	./run_cp.sh

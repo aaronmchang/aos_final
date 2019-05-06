@@ -9,6 +9,7 @@
 #include <signal.h>
 #include <string.h>
 #include <stdint.h>
+#include <time.h>
 #define errExit(msg) do { perror(msg); exit(EXIT_FAILURE); } while (0)
 #define errMsg(msg)  do { perror(msg); } while (0)
 
@@ -92,6 +93,7 @@ static int dispatch_read(const char *fpath, const struct stat *sb,
 	return 0;
 }
 
+/* Issue a write request corresponding to a finished read request */
 void dispatch_write(int index) {
     ioWriteList[index].reqNum = numOpenWrite;
     ioWriteList[index].status = EINPROGRESS;
@@ -120,6 +122,9 @@ int main(int argc, char *argv[]) {
     struct sigaction sa;
     int j;
 	int nftw_flags = 0;
+	struct timespec t1, t2;
+	t1.tv_sec = 0;
+	t1.tv_nsec = 250000000L;
 
     if (argc < 3) {
         fprintf(stderr, "Usage: %s <sourcedir> <copydir>\n", argv[0]);
@@ -162,6 +167,8 @@ int main(int argc, char *argv[]) {
 
 	/* Loop and dispatch write requests for each finished read request */
 	while (numOpenRead > 0) {
+		/* Don't obliterate the processor; it's okay to get I/O completion signal */
+		nanosleep(&t1, &t2);
 		if (gotSIGQUIT)
 			errExit("SIGQUIT received");
 
@@ -172,7 +179,6 @@ int main(int argc, char *argv[]) {
 
                 switch (ioReadList[j].status) {
                 case 0:
-                    printf("Read succeeded\n");
 					dispatch_write(j);
                     break;
                 case EINPROGRESS:
@@ -192,6 +198,8 @@ int main(int argc, char *argv[]) {
 
 	/* Loop until write requests are done */
     while (numOpenWrite > 0) {
+		/* Don't obliterate the processor; it's okay to get I/O completion signal */
+		nanosleep(&t1, &t2);
         if (gotSIGQUIT)
             errExit("SIGQUIT received");
 
@@ -202,7 +210,6 @@ int main(int argc, char *argv[]) {
 
                 switch (ioWriteList[j].status) {
                 case 0:
-                    printf("Write succeeded\n");
                     break;
                 case EINPROGRESS:
                     break;
@@ -219,117 +226,5 @@ int main(int argc, char *argv[]) {
         }
     }
 
-	printf("Copying completed.\n");
 	return 0;
 }
-#if 0
-    for (j = 0; j < numReqs; j++) {
-        ioList[j].reqNum = j;
-        ioList[j].status = EINPROGRESS;
-        ioList[j].aiocbp = &aiocbList[j];
-
-        ioList[j].aiocbp->aio_fildes = open(argv[j + 1], O_RDONLY);
-        if (ioList[j].aiocbp->aio_fildes == -1)
-            errExit("open");
-        printf("opened %s on descriptor %d\n", argv[j + 1],
-                ioList[j].aiocbp->aio_fildes);
-
-        ioList[j].aiocbp->aio_buf = malloc(BUF_SIZE);
-        if (ioList[j].aiocbp->aio_buf == NULL)
-            errExit("malloc");
-
-        ioList[j].aiocbp->aio_nbytes = BUF_SIZE;
-        ioList[j].aiocbp->aio_reqprio = 0;
-        ioList[j].aiocbp->aio_offset = 0;
-        ioList[j].aiocbp->aio_sigevent.sigev_notify = SIGEV_SIGNAL;
-        ioList[j].aiocbp->aio_sigevent.sigev_signo = IO_SIGNAL;
-        ioList[j].aiocbp->aio_sigevent.sigev_value.sival_ptr =
-                                &ioList[j];
-
-        s = aio_read(ioList[j].aiocbp);
-        if (s == -1)
-            errExit("aio_read");
-    }
-
-    openReqs = numReqs;
-
-    /* Loop, monitoring status of I/O requests */
-
-    while (openReqs > 0) {
-        sleep(3);       /* Delay between each monitoring step */
-
-        if (gotSIGQUIT) {
-
-            /* On receipt of SIGQUIT, attempt to cancel each of the
-               outstanding I/O requests, and display status returned
-               from the cancellation requests */
-
-            printf("got SIGQUIT; canceling I/O requests: \n");
-
-            for (j = 0; j < numReqs; j++) {
-                if (ioList[j].status == EINPROGRESS) {
-                    printf("    Request %d on descriptor %d:", j,
-                            ioList[j].aiocbp->aio_fildes);
-                    s = aio_cancel(ioList[j].aiocbp->aio_fildes,
-                            ioList[j].aiocbp);
-                    if (s == AIO_CANCELED)
-                        printf("I/O canceled\n");
-                    else if (s == AIO_NOTCANCELED)
-                        printf("I/O not canceled\n");
-                    else if (s == AIO_ALLDONE)
-                        printf("I/O all done\n");
-                    else
-                        errMsg("aio_cancel");
-                }
-            }
-
-            gotSIGQUIT = 0;
-        }
-
-        /* Check the status of each I/O request that is still
-           in progress */
-
-        printf("aio_error():\n");
-        for (j = 0; j < numReqs; j++) {
-            if (ioList[j].status == EINPROGRESS) {
-                printf("    for request %d (descriptor %d): ",
-                        j, ioList[j].aiocbp->aio_fildes);
-                ioList[j].status = aio_error(ioList[j].aiocbp);
-
-                switch (ioList[j].status) {
-                case 0:
-                    printf("I/O succeeded\n");
-                    break;
-                case EINPROGRESS:
-                    printf("In progress\n");
-                    break;
-                case ECANCELED:
-                    printf("Canceled\n");
-                    break;
-                default:
-                    errMsg("aio_error");
-                    break;
-                }
-
-                if (ioList[j].status != EINPROGRESS)
-                    openReqs--;
-            }
-        }
-    }
-
-    printf("All I/O requests completed\n");
-
-    /* Check status return of all I/O requests */
-
-    printf("aio_return():\n");
-    for (j = 0; j < numReqs; j++) {
-        ssize_t s;
-
-        s = aio_return(ioList[j].aiocbp);
-        printf("    for request %d (descriptor %d): %zd\n",
-                j, ioList[j].aiocbp->aio_fildes, s);
-    }
-
-    exit(EXIT_SUCCESS);
-}
-#endif
