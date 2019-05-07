@@ -4,7 +4,7 @@ clean:
 	rm -f acp
 
 build:
-	gcc -o acp acp.c -lrt
+	gcc -o acp acp.c -lrt -laio
 
 run_acp: clean build
 	./run_acp.sh
