@@ -68,7 +68,7 @@ struct iocb *read_cbs[max_size];
 struct io_event read_events[max_size];
 aio_context_t write_ctx = 0;
 struct iocb *write_cbs[max_size];
-struct io_event write_events[1];
+struct io_event write_events[max_size];
 
 int numReadReq = 0;
 int numOpenRead = 0;
@@ -114,8 +114,6 @@ static int dispatch_read(const char *fpath, const struct stat *sb,
 			else
 				errExit("io_submit in read failed");
 		}
-// DEBUGGGG
-printf("Dispatching read %s on fd %d\n", fullpath, cb->aio_fildes);
 		strcpy(orig_names[numReadReq], fullpath);
 		strcpy(copy_names[numReadReq], newpath);
 		++numReadReq;
@@ -127,33 +125,31 @@ printf("Dispatching read %s on fd %d\n", fullpath, cb->aio_fildes);
 /* Issue a write request corresponding to a finished read request */
 void dispatch_write(struct io_event event) {
 	// Get the file descriptor from the event struct
-	struct iocb oldcb;
-	oldcb = *(struct iocb *)(event.obj);
-	int old_fd = oldcb.aio_fildes;
+	struct iocb * oldcb;
+	oldcb = (struct iocb *)(event.obj);
+	int old_fd = oldcb->aio_fildes;
 	// Get the old path
 	char oldpath[PATH_MAX] = "";
 	char proc[1024];
 	sprintf(proc, "/proc/self/fd/%d", old_fd);
 	if(readlink(proc, oldpath, 1024) < 0)
 		errExit("readlink");
-// DEBUGGGG
-	printf("Dispatching write %s\n", oldpath);
-return;
 	// Find the index of the correct path
+	char fullpath[PATH_MAX] = "";
+	realpath(oldpath, fullpath);
 	int i;
 	for (i = 0; i < numReadReq; i++)
-		if (strcmp(oldpath, orig_names[i]) == 0)
+		if (strcmp(fullpath, orig_names[i]) == 0)
 			break;
 	// Done with old fd
 	close(old_fd);
 	// Modify old cb values
-	oldcb.aio_fildes = open(copy_names[i], O_WRONLY | O_CREAT | O_DIRECT, 0666);
-	if (oldcb.aio_fildes < 0)
+	oldcb->aio_fildes = open(copy_names[i], O_WRONLY | O_CREAT | O_DIRECT, 0666);
+	if (oldcb->aio_fildes < 0)
 		errExit("open in write");
-	oldcb.aio_lio_opcode = IOCB_CMD_PWRITE;
-	write_cbs[0] = &oldcb;
+	oldcb->aio_lio_opcode = IOCB_CMD_PWRITE;
 	// Dispatch write
-	int ret = io_submit(write_ctx, 1, write_cbs);
+	int ret = io_submit(write_ctx, 1, &oldcb);
 	if (ret != 1) {
 		if (ret < 0)
 			errExit("io_submit in write");
@@ -194,14 +190,16 @@ int main(int argc, char *argv[]) {
 	nftw_flags |= FTW_PHYS; /* don't follow symbolic links */
 	if (io_setup(max_size, &read_ctx) < 0 || io_setup(max_size, &write_ctx) < 0)
 		errExit("io_setup");
-	struct iocb all_iocb[max_size];
+	struct iocb all_read_iocb[max_size];
 	for (j = 0; j < max_size; j++){
-		memset(&all_iocb[j], 0, sizeof(struct iocb));
-		read_cbs[j] = &all_iocb[j];
+		memset(&all_read_iocb[j], 0, sizeof(struct iocb));
+		read_cbs[j] = &all_read_iocb[j];
 	}
-// DEBUG
-//	for (j = 0; j < 10; j++)
-//		printf("cb at %d is %p\n", j, read_cbs[j]);
+	struct iocb all_write_iocb[max_size];
+	for (j = 0; j < max_size; j++){
+		memset(&all_write_iocb[j], 0, sizeof(struct iocb));
+		write_cbs[j] = &all_write_iocb[j];
+	}
 
 	/* Dispatch a read request for each file in the source directory tree */
 	if (nftw(argv[1], dispatch_read, 20, nftw_flags) == -1)
@@ -218,42 +216,21 @@ int main(int argc, char *argv[]) {
 		ret = io_getevents(read_ctx, 1, 1, read_events + numOpenRead, NULL);
 		if (ret != 1)
 			errExit("getevents");
-// DEBUGGGG
-printf("Got event %lld, fd %d\n", read_events[numOpenRead].res, ((struct iocb *)(read_events[numOpenRead].obj))->aio_fildes);
+	// DEBUG
+	//printf("Got event %lld, fd %d\n", read_events[numOpenRead].res, ((struct iocb *)(read_events[numOpenRead].obj))->aio_fildes);
 		dispatch_write(read_events[numOpenRead]);
 		--numOpenRead;
     }
-	return 0;
-}
-#if 0
+
 	/* Loop until write requests are done */
     while (numOpenWrite > 0) {
-		/* Don't obliterate the processor; it's okay to get I/O completion signal */
-		nanosleep(&t1, &t2);
         if (gotSIGQUIT)
             errExit("SIGQUIT received");
-
-        /* Check status of write requests */
-        for (j = 0; j < numReadReq; j++) {
-            if (ioWriteList[j].status == EINPROGRESS) {
-                ioWriteList[j].status = aio_error(ioWriteList[j].aiocbp);
-
-                switch (ioWriteList[j].status) {
-                case 0:
-                    break;
-                case EINPROGRESS:
-                    break;
-                case ECANCELED:
-                    break;
-                default:
-                    errMsg("aio_error");
-                    break;
-                }
-
-                if (ioWriteList[j].status != EINPROGRESS)
-                    --numOpenWrite;
-            }
-        }
+        /* Reap write requests until finished*/
+		ret = io_getevents(write_ctx, 1, 1, write_events + numOpenWrite, NULL);
+		if (ret != 1)
+			errExit("getevents");
+		--numOpenWrite;
     }
 
 	/* Cleanup */
@@ -261,4 +238,3 @@ printf("Got event %lld, fd %d\n", read_events[numOpenRead].res, ((struct iocb *)
 		errExit("io_destroy");
 	return 0;
 }
-#endif

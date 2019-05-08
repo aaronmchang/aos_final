@@ -8,6 +8,7 @@ do
 		rm -rf copydir/
 		echo "$total_size MB, $num_files files"
 		./create_dir_tree.py $total_size $num_files
-		time -f "%E" cp -r sourcedir/ copydir/
+		/usr/bin/time -f "%E" cp -r sourcedir/ copydir/
+		echo
 	done
 done
