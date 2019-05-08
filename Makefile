@@ -16,3 +16,5 @@ run_acp: clean build
 
 run_lacp: clean build
 	./run_lacp.sh
+
+run_all: run_cp run_acp run_lacp
