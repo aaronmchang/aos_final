@@ -14,6 +14,7 @@
 #include <linux/aio_abi.h>
 #include <linux/limits.h>
 #include <errno.h>
+#include <malloc.h>
 
 #define errExit(msg) do { perror(msg); exit(EXIT_FAILURE); } while (0)
 #define errMsg(msg)  do { perror(msg); } while (0)
@@ -73,6 +74,15 @@ int numReadReq = 0;
 int numOpenRead = 0;
 int numOpenWrite = 0;
 
+/* Get new aligned buffer for O_DIRECT */
+const char * malloc_aligned(size_t size) {
+	int align = 4096;
+	char * buf = memalign(align * 2, size + align);
+	if (buf == NULL)
+		errExit("malloc in aligning function");
+	return buf;
+}
+
 /* Handle directories and files for nftw */
 static int dispatch_read(const char *fpath, const struct stat *sb,
             int tflag, struct FTW *ftwbuf) {
@@ -89,17 +99,14 @@ static int dispatch_read(const char *fpath, const struct stat *sb,
 		//memset(&cb, 0, sizeof(cb));
 		char fullpath[PATH_MAX] = "";
 		realpath(fpath, fullpath);
-		cb->aio_fildes = open(fullpath, O_RDONLY);
+		cb->aio_fildes = open(fullpath, O_RDONLY | O_DIRECT);
 		if (cb->aio_fildes < 0)
 			errExit("open in read");
 		cb->aio_lio_opcode = IOCB_CMD_PREAD;
-		cb->aio_buf = (uint64_t) malloc((size_t) sb->st_size);
-		if ((void *)cb->aio_buf == NULL)
-			errExit("malloc in read");
+		size_t size = (uint64_t) sb->st_size;
+		cb->aio_buf = (uint64_t)malloc_aligned(size);
 		cb->aio_offset = (int64_t) 0;
-		cb->aio_nbytes = (uint64_t) sb->st_size;
-		//read_cbs[numReadReq] = cb;
-		//int ret = io_submit(read_ctx, 1, &read_cbs[numReadReq]);
+		cb->aio_nbytes = size;
 		int ret = io_submit(read_ctx, 1, &cb);
 		if (ret != 1) {
 			if (ret < 0)
