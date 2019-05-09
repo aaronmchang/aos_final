@@ -9,7 +9,7 @@ do
 		./create_dir_tree.py $total_size $num_files
 		echo "$total_size MB, $num_files files"
 		./clear_cache.sh
-		/usr/bin/time -f "%E" ./acp sourcedir/ copydir/
+		/usr/bin/time -f "%E" ./acp-readahead sourcedir/ copydir/
 	done
+	echo
 done
-echo

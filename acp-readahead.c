@@ -1,4 +1,5 @@
 #define _XOPEN_SOURCE 500
+#define _GNU_SOURCE
 #include <ftw.h>
 #include <fcntl.h>
 #include <stdlib.h>
@@ -71,6 +72,9 @@ static int dispatch_read(const char *fpath, const struct stat *sb,
         ioReadList[numReadReq].aiocbp->aio_fildes = open(fpath, O_RDONLY);
         if (ioReadList[numReadReq].aiocbp->aio_fildes == -1)
             errExit("open");
+		// Initiate readahead as early as possible
+		if (readahead(ioReadList[numReadReq].aiocbp->aio_fildes, 0, (size_t) sb->st_size) != 0)
+			errExit("readahead");
         ioReadList[numReadReq].aiocbp->aio_buf = malloc((intmax_t) sb->st_size);
         if (ioReadList[numReadReq].aiocbp->aio_buf == NULL)
             errExit("malloc");

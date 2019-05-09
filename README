@@ -1,2 +1,9 @@
-Use `make` to see the commands run.
-Use `make -s` to only see the resulting time.
+This directory contains work done on creating asynchronous copying utilities.
+
+- use `make run_cp` to test the baseline cp utility performance.
+- use `make run_acp` to test the POSIX aio version
+- use `make run_lacp` to test the Linux aio version
+
+- use `make run_all` to run all tests
+
+Append `-s` to your make command to only see the resulting time.

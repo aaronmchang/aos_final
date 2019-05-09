@@ -14,8 +14,7 @@ if len(sys.argv) > 2:
 	number_of_files = int(sys.argv[2])
 
 # Calculate size of files to create
-each_file_size = total_size // number_of_files
-each_file_size *= 1024 * 1024
+each_file_size = total_size * 1024 * 1024 // number_of_files
 each_file_size -= each_file_size % 4096
 each_file_size //= 4096
 # write files in both dirs

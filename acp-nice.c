@@ -1,4 +1,5 @@
 #define _XOPEN_SOURCE 500
+#define _GNU_SOURCE
 #include <ftw.h>
 #include <fcntl.h>
 #include <stdlib.h>
@@ -10,6 +11,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <time.h>
+#include <sys/resource.h>
 #define errExit(msg) do { perror(msg); exit(EXIT_FAILURE); } while (0)
 #define errMsg(msg)  do { perror(msg); } while (0)
 
@@ -71,6 +73,9 @@ static int dispatch_read(const char *fpath, const struct stat *sb,
         ioReadList[numReadReq].aiocbp->aio_fildes = open(fpath, O_RDONLY);
         if (ioReadList[numReadReq].aiocbp->aio_fildes == -1)
             errExit("open");
+		// Initiate readahead as early as possible
+		if (readahead(ioReadList[numReadReq].aiocbp->aio_fildes, 0, (size_t) sb->st_size) != 0)
+			errExit("readahead");
         ioReadList[numReadReq].aiocbp->aio_buf = malloc((intmax_t) sb->st_size);
         if (ioReadList[numReadReq].aiocbp->aio_buf == NULL)
             errExit("malloc");
@@ -119,6 +124,13 @@ void dispatch_write(int index) {
 }
 
 int main(int argc, char *argv[]) {
+	// Set priority
+	int which = PRIO_PROCESS;
+	id_t pid;
+	pid = getpid();
+	int priority = -15;
+	setpriority(which, pid, priority);
+
     struct sigaction sa;
     int j;
 	int nftw_flags = 0;
