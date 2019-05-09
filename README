@@ -4,6 +4,6 @@ This directory contains work done on creating asynchronous copying utilities.
 - use `make run_acp` to test the POSIX aio version
 - use `make run_lacp` to test the Linux aio version
 
-- use `make run_all` to run all tests
+Check the makefile for the other experimentation options.
 
-Append `-s` to your make command to only see the resulting time.
+Append `-s` to your make command to only see the resulting time, and not any intermediate commands.
